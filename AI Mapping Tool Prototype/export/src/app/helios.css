@@ -1,0 +1,243 @@
+/* ─────────────────────────────────────────────────────────────
+   Helios Design System — base + semantic CSS tokens
+   v2 — corrected against the user-provided "Colour Contrast Ratios"
+        and "How Colours are Used" specs.
+   Drop in:  <link rel="stylesheet" href="colors_and_type.css">
+   ───────────────────────────────────────────────────────────── */
+
+/* Fonts — Lato is the Helios web default. KDS uses Inter Tight. */
+@import url("https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&family=Inter+Tight:wght@400;500;600;700&display=swap");
+/* Font Awesome 5 (Helios icon system) */
+@import url("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css");
+
+:root {
+  /* ─── Surface tokens (Helios names them by SURFACE, not by gray-step) ───
+     These mirror the spec's Backgrounds column exactly. */
+  --hl-bg:              rgb(240, 244, 244);     /* `background` — the page */
+  --hl-box:             rgb(255, 255, 255);     /* `box` — cards, panels, inputs */
+  --hl-box-inverse:     rgb(58,  73,  83);      /* `box-inverse` — tooltips, dark cards */
+  --hl-framing:         rgb(229, 234, 237);     /* `framing` — action bars, chrome */
+  --hl-framing-inverse: rgb(58,  73,  83);      /* same as box-inverse */
+  --hl-upsell-green:    rgb(233, 246, 232);     /* upsell band */
+  --hl-info-blue:       rgb(234, 242, 249);     /* sidecars with illustrations */
+
+  /* ─── Foreground tokens ─── */
+  --hl-text:            rgb(58, 73, 83);        /* `text` on light surfaces — #3A4953 */
+  --hl-text-inverse:    rgb(250, 251, 251);     /* `text-inverse` on dark surfaces — #FAFBFB */
+  --hl-icon:            rgb(39, 37, 42);        /* `icon` near-black — #27252A (from icon SVG fills) */
+  --hl-keyline:         rgb(190, 203, 207);     /* `keyline` — #BECBCF */
+  --hl-keyline-inverse: rgb(99, 112, 120);      /* `keyline-inverse` on dark — #637078 */
+  --hl-text-disabled:   rgba(58, 73, 83, 0.4);
+
+  /* Legacy semantic aliases so existing CSS keeps working. */
+  --hl-fg-1:            var(--hl-text);
+  --hl-fg-2:            rgb(82, 87, 110);
+  --hl-fg-3:            rgb(140, 140, 144);
+  --hl-fg-disabled:     var(--hl-text-disabled);
+  --hl-bg-chrome:       var(--hl-framing);
+  --hl-bg-subtle:       rgb(241, 242, 247);
+  --hl-bg-modal:        rgb(240, 242, 242);
+  --hl-bg-scrim:        rgba(0, 0, 0, 0.5);
+  --hl-border:          var(--hl-keyline);
+  --hl-border-strong:   rgb(190, 203, 207);
+  --hl-border-input:    rgb(229, 234, 237);
+
+  /* ─── Action / accent palette (Helios "do / go / no" + supplementary) ───
+     IMPORTANT: in Helios 2.0 the PRIMARY action button uses --hl-go-blue
+     (indigo, #3F32F5). Green is reserved for SUCCESS states, confirmation,
+     and toggle-on. Red is destructive. Supplementary-blue is secondary. */
+
+  --hl-go-blue:           rgb(63,  50,  245);   /* primary action — #3F32F5 indigo */
+  --hl-go-blue-on-white:  rgb(44, 156, 230);    /* same role on pure-white surface (#2C9CE6 bright blue)
+                                                   — Helios spec swaps this in for AA contrast on `box`. */
+  --hl-go-blue-hover:     rgb(50,  40,  220);
+  --hl-go-blue-press:     rgb(40,  32,  185);
+
+  --hl-no-red:            rgb(187, 42,  26);    /* destructive / error — #BB2A1A */
+  --hl-no-red-hover:      rgb(165, 35,  20);
+  --hl-no-red-press:      rgb(140, 28,  15);
+
+  --hl-do-green:          rgb(65,  175, 75);    /* SUCCESS only — #41AF4B
+                                                   Used for status, confirmation toasts, toggle-on,
+                                                   "Do Green" body text. NOT the primary button. */
+  --hl-do-green-hover:    rgb(56,  158, 66);
+  --hl-do-green-press:    rgb(47,  140, 56);
+
+  --hl-supplementary:     rgb(98,  139, 166);   /* secondary button — #628BA6 supplementary-blue */
+  --hl-supplementary-hover: rgb(86,  124, 150);
+  --hl-supplementary-press: rgb(74,  108, 132);
+
+  /* Helios product-icon tile color (the supp-blue used in the L1 nav and Icons specimens) */
+  --hl-icon-tile:         rgb(54, 91, 133);     /* --blue-120 from the Figma export — #365B85 */
+
+  /* ─── Banner / status fills ─── */
+  --hl-banner-info:       rgb(98, 139, 166);
+  --hl-banner-success:    rgb(65, 175, 75);
+  --hl-banner-error:      rgb(187, 42, 26);
+  --hl-banner-warning:    rgb(250, 199, 55);
+
+  /* ─── Highlight (selection) color ─── */
+  --hl-highlight:         rgba(63, 50, 245, 0.12);  /* light indigo wash on selected rows */
+
+  /* ─── Spacing (8-pt scale, Helios "sizes") ─── */
+  --hl-space-0:   0;
+  --hl-space-1:   8px;
+  --hl-space-2:   16px;
+  --hl-space-3:   24px;
+  --hl-space-4:   32px;
+  --hl-space-5:   40px;
+  --hl-space-6:   56px;
+  --hl-space-11:  88px;
+  --hl-space-16:  128px;
+
+  /* ─── Radii ─── */
+  --hl-radius-button: 3px;
+  --hl-radius-card:   3px;       /* cards in Helios 2.0 have a soft 3px corner */
+  --hl-radius-tile:   8px;       /* large product/icon tiles use 8px */
+  --hl-radius-modal:  8px;       /* corrected — the spec image shows ~8px */
+  --hl-radius-pill:   999px;
+  --hl-radius-toggle: 16px;
+
+  /* ─── Elevation (sparing — Helios uses one elevation) ─── */
+  --hl-shadow-popover:    0 1px 3px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.06);
+  --hl-shadow-modal:      0 12px 48px rgba(0,0,0,0.18);
+  --hl-shadow-action-bar: 0 -1px 0 rgba(0,0,0,0.06), 0 -4px 12px rgba(0,0,0,0.04);
+
+  /* ─── Type ─── */
+  --hl-font-sans:  "Lato", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --hl-font-kds:   "Inter Tight", "Lato", sans-serif;
+  --hl-font-mono:  ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Helios named type roles (from the Typography specimen image): Grand, Label, Body, Signpost. */
+  --hl-fs-grand:    44px;   --hl-lh-grand:    52px;   /* large display heading */
+  --hl-fs-h1:       32px;   --hl-lh-h1:       40px;
+  --hl-fs-h2:       24px;   --hl-lh-h2:       32px;
+  --hl-fs-h3:       20px;   --hl-lh-h3:       28px;
+  --hl-fs-body:     15px;   --hl-lh-body:     22px;
+  --hl-fs-bold:     15px;   --hl-lh-bold:     18px;
+  --hl-fs-nav:      14px;   --hl-lh-nav:      17px;
+  --hl-fs-small:    12px;   --hl-lh-small:    15px;
+  --hl-fs-label:    14px;   --hl-lh-label:    18px;       /* `Label` — bold w/ underline */
+  --hl-fs-signpost: 13px;   --hl-lh-signpost: 16px;       /* `SIGNPOST` — uppercase tracked */
+
+  /* ─── Animation ─── */
+  --hl-ease:       cubic-bezier(0.2, 0, 0, 1);
+  --hl-dur-fast:   150ms;
+  --hl-dur-base:   200ms;
+}
+
+/* Responsive ramps */
+@media (max-width: 1023px) {
+  :root {
+    --hl-fs-grand: 36px;  --hl-lh-grand: 44px;
+    --hl-fs-h1:    28px;  --hl-lh-h1:    36px;
+  }
+}
+@media (max-width: 639px) {
+  :root {
+    --hl-fs-grand: 28px;  --hl-lh-grand: 36px;
+    --hl-fs-h1:    24px;  --hl-lh-h1:    32px;
+    --hl-fs-h3:    18px;  --hl-lh-h3:    24px;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Semantic element defaults.
+   ───────────────────────────────────────────────────────────── */
+
+html, body {
+  font-family: var(--hl-font-sans);
+  font-size: var(--hl-fs-body);
+  line-height: var(--hl-lh-body);
+  color: var(--hl-text);
+  background: var(--hl-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Helios named text roles */
+.hl-grand {
+  font-family: var(--hl-font-sans);
+  font-weight: 900;
+  font-size: var(--hl-fs-grand);
+  line-height: var(--hl-lh-grand);
+  letter-spacing: -0.02em;
+  color: var(--hl-icon);
+  margin: 0;
+}
+.hl-label {
+  font-family: var(--hl-font-sans);
+  font-weight: 700;
+  font-size: var(--hl-fs-label);
+  line-height: var(--hl-lh-label);
+  color: var(--hl-icon);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.hl-signpost {
+  font-family: var(--hl-font-sans);
+  font-weight: 700;
+  font-size: var(--hl-fs-signpost);
+  line-height: var(--hl-lh-signpost);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--hl-icon);
+}
+
+h1, .hl-h1 {
+  font-family: var(--hl-font-sans);
+  font-weight: 700;
+  font-size: var(--hl-fs-h1);
+  line-height: var(--hl-lh-h1);
+  color: var(--hl-text);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+h2, .hl-h2 {
+  font-family: var(--hl-font-sans);
+  font-weight: 700;
+  font-size: var(--hl-fs-h2);
+  line-height: var(--hl-lh-h2);
+  color: var(--hl-text);
+  margin: 0;
+}
+h3, .hl-h3 {
+  font-family: var(--hl-font-sans);
+  font-weight: 700;
+  font-size: var(--hl-fs-h3);
+  line-height: var(--hl-lh-h3);
+  color: var(--hl-text);
+  margin: 0;
+}
+.hl-bold {
+  font-weight: 700;
+  font-size: var(--hl-fs-bold);
+  line-height: var(--hl-lh-bold);
+}
+.hl-body, p {
+  font-family: var(--hl-font-sans);
+  font-weight: 400;
+  font-size: var(--hl-fs-body);
+  line-height: var(--hl-lh-body);
+  color: var(--hl-text);
+}
+.hl-small, small {
+  font-size: var(--hl-fs-small);
+  line-height: var(--hl-lh-small);
+  color: var(--hl-fg-2);
+}
+.hl-do-green-body { color: var(--hl-do-green); font-weight: 700; }
+.hl-no-red-body   { color: var(--hl-no-red);   font-weight: 700; }
+
+code, kbd, .hl-mono { font-family: var(--hl-font-mono); }
+
+a, .hl-link {
+  color: var(--hl-go-blue);
+  text-decoration: none;
+  transition: color var(--hl-dur-fast) var(--hl-ease);
+}
+a:hover, .hl-link:hover { color: var(--hl-go-blue-hover); text-decoration: underline; }
+a:focus-visible, .hl-link:focus-visible {
+  outline: 2px solid var(--hl-go-blue);
+  outline-offset: 2px;
+}
