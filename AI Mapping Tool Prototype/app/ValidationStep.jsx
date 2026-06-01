@@ -3,98 +3,10 @@
 
 const { useState: useStateV, useMemo: useMemoV } = React;
 
-// ── Pure validation function ───────────────────────────────────────────
-window.validateImport = function validateImport(file, mappings) {
-  // Build a lookup: target_field -> user_header
-  const fieldToHeader = {};
-  mappings.forEach(m => {
-    // Skip custom fields and skipped columns when building the schema lookup
-    if (m.target_field && m.target_field !== "__custom__") {
-      fieldToHeader[m.target_field] = m.user_header;
-    }
-  });
-
-  const targetLabel = id => (window.TARGET_SCHEMA.find(t => t.id === id) || {}).label || id;
-  const errors = [];
-
-  // Cross-row: build SKU index
-  const skuHeader = fieldToHeader.sku;
-  const skuMap = {};
-  if (skuHeader) {
-    file.rows.forEach((r, i) => {
-      const v = String(r[skuHeader] || "").trim();
-      if (!v) return;
-      skuMap[v] = (skuMap[v] || []);
-      skuMap[v].push(i + 2); // +2 for header row + 1-index
-    });
-  }
-  const duplicateSkus = Object.entries(skuMap).filter(([, rows]) => rows.length > 1);
-
-  // Per-row checks
-  file.rows.forEach((r, i) => {
-    const rowNum = i + 2; // human-readable row number (header is row 1)
-
-    // Required fields
-    ["product_name", "brand_name"].forEach(req => {
-      const h = fieldToHeader[req];
-      if (!h) return;
-      const v = String(r[h] || "").trim();
-      if (!v) {
-        errors.push({
-          row: rowNum,
-          field: targetLabel(req),
-          category: "Missing required",
-          message: `${targetLabel(req)} is empty. Add a value before re-uploading.`,
-        });
-      }
-    });
-
-    // Wholesale price numeric
-    const priceHeader = fieldToHeader.wholesale_price;
-    if (priceHeader) {
-      const raw = String(r[priceHeader] || "").trim();
-      if (raw && !/^-?\d+(\.\d+)?$/.test(raw.replace(/[$,]/g, ""))) {
-        errors.push({
-          row: rowNum,
-          field: "Wholesale price",
-          category: "Invalid format",
-          message: `"${raw}" is not a valid number. Enter a numeric value (e.g. 19.99).`,
-        });
-      } else if (raw && parseFloat(raw.replace(/[$,]/g, "")) < 0) {
-        errors.push({
-          row: rowNum,
-          field: "Wholesale price",
-          category: "Invalid format",
-          message: `Wholesale price must be 0 or greater (got ${raw}).`,
-        });
-      }
-    }
-  });
-
-  // Duplicate SKUs
-  duplicateSkus.forEach(([sku, rows]) => {
-    rows.forEach(rowNum => {
-      errors.push({
-        row: rowNum,
-        field: "SKU",
-        category: "Duplicate values",
-        message: `SKU "${sku}" appears on rows ${rows.join(", ")}. SKUs must be unique within an upload.`,
-      });
-    });
-  });
-
-  errors.sort((a, b) => a.row - b.row || a.field.localeCompare(b.field));
-  return {
-    success: errors.length === 0,
-    totalRows: file.rows.length,
-    errorCount: errors.length,
-    affectedRows: new Set(errors.map(e => e.row)).size,
-    errors,
-  };
-};
+// validateImport lives in app/validate.js (pure, unit-tested, loaded before this file).
 
 // ── Component ──────────────────────────────────────────────────────────
-function ValidationStep({ file, mappings, result, onReupload, onBack }) {
+function ValidationStep({ file, mappings, result, constants, onReupload, onBack }) {
   const [expanded, setExpanded] = useStateV({ "Missing required": true, "Invalid format": true, "Duplicate values": true });
 
   const grouped = useMemoV(() => {
@@ -104,19 +16,21 @@ function ValidationStep({ file, mappings, result, onReupload, onBack }) {
   }, [result]);
 
   const categoryMeta = {
-    "Missing required": { icon: "asterisk", fg: "var(--hl-no-red)", desc: "Required fields are blank for one or more rows." },
-    "Invalid format":   { icon: "exclamation-triangle", fg: "#B47A00", desc: "Values don't match the expected data type." },
-    "Duplicate values": { icon: "clone", fg: "var(--hl-go-blue)", desc: "Identifiers appear more than once in the file." },
+    "Missing required": { icon: "asterisk", fg: "var(--hl-no-red)", bg: "rgba(230,100,60,0.12)", desc: "Required fields are blank for one or more rows." },
+    "Invalid format":   { icon: "exclamation-triangle", fg: "#B47A00", bg: "rgba(180,122,0,0.12)", desc: "Values don't match the expected data type." },
+    "Invalid value":    { icon: "list-ul", fg: "#B47A00", bg: "rgba(180,122,0,0.12)", desc: "Values aren't in the accepted list for a controlled field." },
+    "Duplicate values": { icon: "clone", fg: "var(--hl-go-blue)", bg: "rgba(5,141,233,0.12)", desc: "Identifiers appear more than once in the file." },
   };
+  const metaFor = (cat) => categoryMeta[cat] || { icon: "circle-info", fg: "var(--hl-fg-2)", bg: "var(--hl-framing)", desc: "" };
 
   const downloadCSV = () => {
-    const rows = [["Row", "Field", "Category", "Message"]];
-    result.errors.forEach(e => rows.push([e.row, e.field, e.category, e.message]));
+    const rows = [["Status", "Row", "Style Number", "Product Key", "Field", "Error Type", "Category", "Message"]];
+    result.errors.forEach(e => rows.push(["ERROR", e.row, e.styleNumber || "", e.productKey || "", e.field, e.error_type || "", e.category, e.message]));
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `${file.filename.replace(/\.[^.]+$/, "")}-errors.csv`;
+    a.download = `${file.filename.replace(/\.[^.]+$/, "")}-summary_log.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -125,45 +39,79 @@ function ValidationStep({ file, mappings, result, onReupload, onBack }) {
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 32px 24px", width: "100%" }}>
 
-        {/* Summary banner */}
-        <div style={{
-          background: "var(--hl-banner-error)",
-          color: "#fff",
-          borderRadius: 3,
-          padding: "20px 24px",
-          display: "flex", alignItems: "center", gap: 20, marginBottom: 24,
-        }}>
-          <div style={{
-            width: 48, height: 48, borderRadius: "50%",
-            background: "rgba(255,255,255,0.18)",
-            display: "inline-flex", alignItems: "center", justifyContent: "center",
-            fontSize: 22, flexShrink: 0,
-          }}>
-            <i className="fas fa-times"/>
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>
-              Import blocked — {result.errorCount} {result.errorCount === 1 ? "error" : "errors"} found
-            </div>
-            <div style={{ fontSize: 14, opacity: 0.92, lineHeight: "20px" }}>
-              No rows were saved. Fix the issues below in your source file, then re-upload to continue.
-            </div>
-          </div>
-          <Button variant="supp" onClick={downloadCSV} icon="download" style={{ background: "#fff", color: "var(--hl-no-red)" }}>
-            Download error report
-          </Button>
-        </div>
+        {/* Summary card — actionable, with a tangible import-rate bar */}
+        {(() => {
+          const wouldImport = Math.max(0, result.totalRows - result.affectedRows);
+          const pct = result.importRate != null ? result.importRate
+            : (result.totalRows ? Math.round((wouldImport / result.totalRows) * 100) : 0);
+          return (
+            <div style={{ background: "#fff", border: "2px solid var(--hl-keyline)", borderLeft: "4px solid var(--hl-no-red)", borderRadius: 4, padding: "20px 24px", marginBottom: 24 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+                <div style={{
+                  width: 44, height: 44, borderRadius: "50%", flexShrink: 0,
+                  background: "rgba(230,100,60,0.12)", color: "var(--hl-no-red)",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 20,
+                }}>
+                  <i className="fas fa-circle-exclamation"/>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--hl-icon)", marginBottom: 4 }}>
+                    Almost there — fix {result.errorCount} {result.errorCount === 1 ? "issue" : "issues"} to import
+                  </div>
+                  <div style={{ fontSize: 14, color: "var(--hl-fg-2)", lineHeight: "20px", textWrap: "pretty" }}>
+                    NuORDER uses a strict all-or-nothing commit, so nothing imports until every row passes. This is a dry run — fix the issues below in your source file and re-upload.
+                  </div>
+                </div>
+                <Button variant="supp" onClick={downloadCSV} icon="download" style={{ flexShrink: 0 }}>
+                  Download report
+                </Button>
+              </div>
 
-        {/* Top stats */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 24 }}>
-          <Stat label="Rows processed" value={result.totalRows} icon="list"/>
-          <Stat label="Errors found" value={result.errorCount} icon="exclamation-triangle" tone="err"/>
-          <Stat label="Rows affected" value={result.affectedRows} icon="layer-group" tone="warn"/>
+              {/* Import-rate bar */}
+              <div style={{ marginTop: 18 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--hl-icon)" }}>
+                    {wouldImport.toLocaleString()} of {result.totalRows.toLocaleString()} products would import
+                  </span>
+                  <span style={{ fontSize: 20, fontWeight: 900, color: pct >= 90 ? "var(--hl-do-green)" : pct >= 50 ? "#B47A00" : "var(--hl-no-red)" }}>
+                    {pct}%
+                  </span>
+                </div>
+                <div style={{ height: 10, borderRadius: 999, background: "rgba(230,100,60,0.18)", overflow: "hidden", display: "flex" }}>
+                  <div style={{ width: pct + "%", background: "var(--hl-do-green)", transition: "width 400ms cubic-bezier(0.2,0,0,1)" }}/>
+                </div>
+                <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 12, color: "var(--hl-fg-3)" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 2, background: "var(--hl-do-green)" }}/>
+                    {wouldImport.toLocaleString()} ready
+                  </span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 2, background: "var(--hl-no-red)" }}/>
+                    {result.affectedRows.toLocaleString()} need fixes
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Error breakdown by category — compact pills */}
+        <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+          {Object.keys(grouped).map(cat => {
+            const meta = metaFor(cat);
+            return (
+              <div key={cat} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 14px", background: "#fff", border: "2px solid var(--hl-keyline)", borderRadius: 3 }}>
+                <i className={`fas fa-${meta.icon}`} style={{ color: meta.fg, fontSize: 13 }}/>
+                <span style={{ fontWeight: 700, fontSize: 14, color: "var(--hl-icon)" }}>{grouped[cat].length}</span>
+                <span style={{ fontSize: 13, color: "var(--hl-fg-2)" }}>{cat.toLowerCase()}</span>
+              </div>
+            );
+          })}
         </div>
 
         {/* Error groups */}
         {Object.keys(grouped).map(cat => {
-          const meta = categoryMeta[cat] || { icon: "info-circle", fg: "var(--hl-fg-2)", desc: "" };
+          const meta = metaFor(cat);
           const errs = grouped[cat];
           const isOpen = expanded[cat] !== false;
           return (
@@ -176,7 +124,7 @@ function ValidationStep({ file, mappings, result, onReupload, onBack }) {
                 }}>
                 <div style={{
                   width: 36, height: 36, borderRadius: 3,
-                  background: meta.fg + "15",
+                  background: meta.bg,
                   color: meta.fg,
                   display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0,
                 }}>
@@ -210,9 +158,12 @@ function ValidationStep({ file, mappings, result, onReupload, onBack }) {
                     }}>
                       <div style={{ fontWeight: 700, fontFamily: "var(--hl-font-mono)", color: "var(--hl-icon)" }}>
                         Row {e.row}
+                        {e.productKey ? <div style={{ fontSize: 10, fontWeight: 400, color: "var(--hl-fg-3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 72 }} title={e.productKey}>{e.productKey}</div> : null}
                       </div>
-                      <div style={{ fontWeight: 700, color: meta.fg }}>{e.field}</div>
-                      <div style={{ color: "var(--hl-fg-1)", lineHeight: "20px" }}>{e.message}</div>
+                      <div>
+                        <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 999, background: meta.bg, color: meta.fg, fontWeight: 700, fontSize: 12 }}>{e.field}</span>
+                      </div>
+                      <div style={{ color: "var(--hl-fg-1)", lineHeight: "20px", textWrap: "pretty" }}>{e.message}</div>
                     </div>
                   ))}
                 </div>
@@ -220,6 +171,19 @@ function ValidationStep({ file, mappings, result, onReupload, onBack }) {
             </div>
           );
         })}
+
+        {/* Non-blocking auto-format adjustments (Gap #3 — category flattening etc.) */}
+        {result.adjustmentCount > 0 && (
+          <div style={{ background: "rgba(5,141,233,0.05)", border: "1px solid rgba(5,141,233,0.25)", borderRadius: 3, padding: "14px 18px", marginTop: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 700, color: "var(--hl-icon)", marginBottom: 6 }}>
+              <i className="fas fa-wand-magic-sparkles" style={{ color: "var(--hl-go-blue)" }}/>
+              {result.adjustmentCount} value{result.adjustmentCount === 1 ? "" : "s"} we'll auto-format on import
+            </div>
+            <div style={{ fontSize: 13, color: "var(--hl-fg-2)", lineHeight: "18px" }}>
+              These don't block the import — we'll fix them automatically. e.g. {result.adjustments[0].message}
+            </div>
+          </div>
+        )}
 
       </div>
 
@@ -235,21 +199,6 @@ function ValidationStep({ file, mappings, result, onReupload, onBack }) {
           <Button variant="supp" icon="download" onClick={downloadCSV}>Download report</Button>
           <Button variant="do" icon="upload" onClick={onReupload}>Re-upload corrected file</Button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function Stat({ label, value, icon, tone }) {
-  const toneFg = tone === "err" ? "var(--hl-no-red)" : tone === "warn" ? "#B47A00" : "var(--hl-go-blue)";
-  return (
-    <div style={{ background: "#fff", border: "2px solid var(--hl-keyline)", borderRadius: 3, padding: "20px 24px", display: "flex", alignItems: "center", gap: 16 }}>
-      <div style={{ width: 44, height: 44, borderRadius: 3, background: toneFg + "15", color: toneFg, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
-        <i className={`fas fa-${icon}`}/>
-      </div>
-      <div>
-        <div style={{ fontSize: 32, fontWeight: 900, color: "var(--hl-icon)", lineHeight: 1 }}>{value}</div>
-        <div style={{ fontSize: 13, color: "var(--hl-fg-2)", marginTop: 4 }}>{label}</div>
       </div>
     </div>
   );

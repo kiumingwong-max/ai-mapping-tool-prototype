@@ -6,7 +6,7 @@
 // On Continue we resolve the chosen source down to {filename, headers, rows}
 // and hand off to the mapping step.
 
-const { useState: useStateU, useRef: useRefU, useCallback: useCallbackU, useEffect: useEffectU } = React;
+const { useState: useStateU, useRef: useRefU, useCallback: useCallbackU, useEffect: useEffectU, useMemo: useMemoU } = React;
 
 function UploadStep({ onParsed }) {
   const [phase, setPhase] = useStateU("idle"); // idle | analyzing | triage
@@ -14,6 +14,7 @@ function UploadStep({ onParsed }) {
   const [files, setFiles] = useStateU([]);              // parsed files
   const [triage, setTriage] = useStateU(null);          // AI result
   const [selection, setSelection] = useStateU(null);    // {file, sheet, headerRow}
+  const [joinSel, setJoinSel] = useStateU(null);        // #6 chosen pricing join {file,sheet,headerRow,key}
   const [error, setError] = useStateU(null);
   const fileRef = useRefU(null);
 
@@ -43,6 +44,13 @@ function UploadStep({ onParsed }) {
           sheet: result.primary_sheet,
           headerRow: result.primary_header_row ?? 0,
         });
+      } else {
+        // No clear primary (e.g. a lone customer/supplementary file) — still
+        // auto-select the first data sheet so the user can continue.
+        for (const tf of result.files) {
+          const ds = (tf.sheets || []).find(s => s.kind === "data");
+          if (ds) { setSelection({ filename: tf.filename, sheet: ds.name, headerRow: ds.header_row ?? 0 }); break; }
+        }
       }
       setPhase("triage");
     } catch (e) {
@@ -67,24 +75,21 @@ function UploadStep({ onParsed }) {
   const loadRealMix = async () => {
     setPhase("analyzing");
     try {
-      const samples = [
-        { id: "sample_joor",         name: "JOOR_Full_Access_Linesheet_Template.xlsx" },
-        { id: "sample_lnb_company",  name: "Le New Black Company Data Template.xlsx" },
-        { id: "sample_lnb_pricing",  name: "Le New Black Pricesheet Template.xlsx" },
-        { id: "sample_lnb_product",  name: "Le New Black Product Data Template.xlsx" },
-        { id: "sample_shopify_a",    name: "Shopify Products_export.xlsx" },
-        { id: "sample_shopify_b",    name: "shopify_products_export_1.xlsx" },
-        { id: "sample_xo_maria",     name: "XO_Maria_Shopify_Export.xlsx" },
+      const names = [
+        "Cami NYC - Joor Linesheets.xlsx",
+        "Le New Black Pricesheet Template.xlsx",
+        "Anaz faire-products.xlsx",
+        "12_24 VELOCI Updated Shopify Export.xlsx",
+        "Jewels By Sunaina (Shopify export).xlsx",
+        "customerDetails.csv",
+        "XO Maria Shopify products_export_1.csv",
       ];
       const fs = [];
-      for (const s of samples) {
-        // Resource URLs come from window.__resources in the bundled standalone build.
-        // Falls back to the uploads/ path when running unbundled.
-        const url = (window.__resources && window.__resources[s.id]) || ("uploads/" + s.name);
-        const r = await fetch(url);
+      for (const name of names) {
+        const r = await fetch("uploads/" + name);
         if (!r.ok) continue;
         const blob = await r.blob();
-        fs.push(new File([blob], s.name));
+        fs.push(new File([blob], name));
       }
       if (fs.length === 0) {
         setPhase("idle");
@@ -99,13 +104,78 @@ function UploadStep({ onParsed }) {
     }
   };
 
+  const loadSingleUpload = async (path, name) => {
+    setPhase("analyzing");
+    try {
+      const r = await fetch(encodeURI(path));
+      if (!r.ok) { setPhase("idle"); setError("Couldn't load the demo file."); return; }
+      const blob = await r.blob();
+      ingest([new File([blob], name)]);
+    } catch (e) {
+      console.error(e);
+      setPhase("idle");
+      setError("Couldn't load the demo file.");
+    }
+  };
+
   const handleContinue = () => {
     if (!selection) return;
     const parsed = files.find(f => f.filename === selection.filename);
     if (!parsed) return;
     const extracted = window.extractTable(parsed, selection.sheet, selection.headerRow);
-    onParsed(extracted);
+    // Pre-process multi-row product structure: group by product key, forward-fill
+    // shared product fields into variant rows, set aside additional-image rows.
+    let normalized = window.normalizeMultiRow(extracted);
+
+    // #6 — join a supplementary pricing file onto the product file by shared key
+    if (joinSel && joinSel.file && joinSel.key) {
+      const priceParsed = files.find(f => f.filename === joinSel.file);
+      if (priceParsed) {
+        const priceTable = window.extractTable(priceParsed, joinSel.sheet, joinSel.headerRow);
+        normalized = window.joinTables(normalized, priceTable, joinSel.key) || normalized;
+      }
+    }
+
+    // Tag the file's classified purpose so the app can branch (#4 customer data)
+    const tf = triage.files.find(t => t.filename === selection.filename);
+    normalized.purpose = tf ? tf.purpose : "product_catalog";
+    onParsed(normalized);
   };
+
+  // Detect a join opportunity: a supplementary pricing file that shares a key
+  // column (SKU / Reference / Style Number) with the selected product file (#6).
+  const joinOpportunity = useMemoU(() => {
+    if (!triage || !selection) return null;
+    const primaryParsed = files.find(f => f.filename === selection.filename);
+    if (!primaryParsed) return null;
+    const primarySheet = primaryParsed.sheets.find(s => s.name === selection.sheet);
+    const primaryHeaders = (primarySheet && (primarySheet.preview[selection.headerRow] || [])).map(h => String(h).trim());
+    const KEY_CANDIDATES = ["sku", "variant sku", "reference", "style number", "style code", "product token", "item code"];
+    const sharedKey = (aHeaders, bHeaders) => {
+      for (const k of KEY_CANDIDATES) {
+        const a = aHeaders.find(h => h.toLowerCase() === k);
+        const b = bHeaders.find(h => h.toLowerCase() === k);
+        if (a && b) return a;
+      }
+      return null;
+    };
+    // Look for a pricing/supplementary file with a shared key
+    for (const tf of triage.files) {
+      if (tf.filename === selection.filename) continue;
+      if (tf.purpose !== "pricing" && tf.recommendation !== "supplementary") continue;
+      const pParsed = files.find(f => f.filename === tf.filename);
+      if (!pParsed) continue;
+      const dataSheet = (tf.sheets || []).find(s => s.kind === "data") || tf.sheets[0];
+      if (!dataSheet) continue;
+      const ps = pParsed.sheets.find(s => s.name === dataSheet.name);
+      const pHeaders = (ps && (ps.preview[dataSheet.header_row || 0] || [])).map(h => String(h).trim());
+      const key = sharedKey(primaryHeaders, pHeaders);
+      if (key) {
+        return { file: tf.filename, sheet: dataSheet.name, headerRow: dataSheet.header_row || 0, key, label: tf.purpose_label };
+      }
+    }
+    return null;
+  }, [triage, selection, files]);
 
   if (phase === "analyzing") return <AnalyzingView files={files}/>;
   if (phase === "triage" && triage) {
@@ -115,8 +185,11 @@ function UploadStep({ onParsed }) {
         triage={triage}
         selection={selection}
         setSelection={setSelection}
+        joinOpportunity={joinOpportunity}
+        joinSel={joinSel}
+        setJoinSel={setJoinSel}
         onContinue={handleContinue}
-        onStartOver={() => { setPhase("idle"); setFiles([]); setTriage(null); setSelection(null); }}
+        onStartOver={() => { setPhase("idle"); setFiles([]); setTriage(null); setSelection(null); setJoinSel(null); }}
       />
     );
   }
@@ -190,11 +263,17 @@ function UploadStep({ onParsed }) {
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 14, color: "var(--hl-icon)", marginBottom: 4 }}>Try the AI triage agent</div>
             <div style={{ fontSize: 13, color: "var(--hl-fg-2)", marginBottom: 14, lineHeight: "18px" }}>
-              Load a real-world mix of vendor templates, Shopify exports, and a pricesheet — and watch the agent sort it out.
+              Load a real brand export and watch the agent classify it, find the headers, group multi-row products, and map the columns.
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              <SampleChip label="Messy real upload" hint="7 files · JOOR + Le New Black + Shopify" onClick={loadRealMix}/>
-              <SampleChip label="Clean CSV" hint="10 rows · single file" onClick={() => handleSample("clean")}/>
+              <SampleChip label="Messy real upload" hint="7 files · picks the right one" onClick={loadRealMix}/>
+              <SampleChip label="Shopify multi-row" hint="115 rows → 52 products + images" onClick={() => loadSingleUpload("uploads/xo_maria_multirow.csv", "XO Maria Shopify products_export.csv")}/>
+              <SampleChip label="Large Shopify catalog" hint="82 cols · 2,199 rows" onClick={() => loadSingleUpload("uploads/Hortons EngLand Shopify product export.xlsx", "Hortons England Shopify product export.xlsx")}/>
+              <SampleChip label="JOOR linesheet" hint="113 cols · tiered pricing" onClick={() => loadSingleUpload("uploads/BEC AND BRIDGE - Joor Linesheets.csv", "BEC AND BRIDGE - Joor Linesheets.csv")}/>
+              <SampleChip label="JOOR — Cami NYC" hint="87 cols · real brand export" onClick={() => loadSingleUpload("uploads/Cami NYC - Joor Linesheets.xlsx", "Cami NYC - Joor Linesheets.xlsx")}/>
+              <SampleChip label="Faire export" hint="annotation rows · option pairs" onClick={() => loadSingleUpload("uploads/Anaz faire-products.xlsx", "Anaz faire-products.xlsx")}/>
+              <SampleChip label="Large Faire" hint="66 cols · 1,001 rows · buried header" onClick={() => loadSingleUpload("uploads/Lemonbella Faire edited.xlsx", "Lemonbella Faire edited.xlsx")}/>
+              <SampleChip label="Customer file" hint="routes to account import" onClick={() => loadSingleUpload("uploads/JOOR_Full_Access_Customer_Data_Template.xlsx", "JOOR_Full_Access_Customer_Data_Template.xlsx")}/>
               <SampleChip label="With errors" hint="dupes + missing" onClick={() => handleSample("errors")}/>
             </div>
           </div>
@@ -275,7 +354,7 @@ function AnalyzingView({ files }) {
 // Triage view — main payoff. File cards, sheet selection, header row override
 // ─────────────────────────────────────────────────────────────────────────
 
-function TriageView({ files, triage, selection, setSelection, onContinue, onStartOver }) {
+function TriageView({ files, triage, selection, setSelection, joinOpportunity, joinSel, setJoinSel, onContinue, onStartOver }) {
   const filesByName = Object.fromEntries(files.map(f => [f.filename, f]));
   const trBy = Object.fromEntries(triage.files.map(t => [t.filename, t]));
   const totalSheets = files.reduce((s, f) => s + (f.sheets?.length || 0), 0);
@@ -350,6 +429,37 @@ function TriageView({ files, triage, selection, setSelection, onContinue, onStar
             setHeaderRow={(r) => setSelection({ ...selection, headerRow: r })}
           />
         )}
+
+        {/* Multi-file join offer (#6) */}
+        {joinOpportunity && (
+          <div style={{
+            marginTop: 16, padding: "14px 18px", borderRadius: 3,
+            background: "rgba(5,141,233,0.06)", border: "1px solid rgba(5,141,233,0.28)",
+            display: "flex", alignItems: "center", gap: 14,
+          }}>
+            <div style={{ width: 32, height: 32, borderRadius: 3, flexShrink: 0, background: "var(--hl-go-blue)", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+              <i className="fas fa-link"/>
+            </div>
+            <div style={{ flex: 1, fontSize: 13, lineHeight: "18px", color: "var(--hl-fg-1)" }}>
+              <div style={{ fontWeight: 700, color: "var(--hl-icon)" }}>Join {joinOpportunity.label.toLowerCase()} from “{joinOpportunity.file}”?</div>
+              <div style={{ color: "var(--hl-fg-2)" }}>
+                It shares a <code style={{ fontFamily: "var(--hl-font-mono)", background: "var(--hl-framing)", padding: "1px 5px", borderRadius: 2 }}>{joinOpportunity.key}</code> column — we can merge its columns onto each product row.
+              </div>
+            </div>
+            <button
+              onClick={() => setJoinSel(joinSel ? null : joinOpportunity)}
+              style={{
+                height: 34, padding: "0 14px", borderRadius: 3, cursor: "pointer", fontFamily: "inherit",
+                fontSize: 13, fontWeight: 700,
+                border: `2px solid ${joinSel ? "var(--hl-do-green)" : "var(--hl-go-blue)"}`,
+                background: joinSel ? "var(--hl-do-green)" : "#fff",
+                color: joinSel ? "#fff" : "var(--hl-go-blue)",
+              }}>
+              <i className={`fas fa-${joinSel ? "check" : "plus"}`} style={{ marginRight: 6 }}/>
+              {joinSel ? "Will join" : "Join data"}
+            </button>
+          </div>
+        )}
       </div>
 
       <div style={{ marginTop: "auto" }}/>
@@ -360,10 +470,10 @@ function TriageView({ files, triage, selection, setSelection, onContinue, onStar
         padding: "14px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, zIndex: 2,
       }}>
         <Button variant="text" icon="arrow-left" onClick={onStartOver}>Upload different files</Button>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0 }}>
           {selection ? (
-            <span style={{ fontSize: 13, color: "var(--hl-fg-2)" }}>
-              Importing <b style={{ color: "var(--hl-icon)" }}>{selection.sheet}</b> from <b style={{ color: "var(--hl-icon)" }}>{selection.filename}</b>
+            <span style={{ fontSize: 13, color: "var(--hl-fg-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 360 }} title={`${selection.sheet} — ${selection.filename}`}>
+              Importing <b style={{ color: "var(--hl-icon)" }}>{selection.sheet}</b>
             </span>
           ) : (
             <span style={{ fontSize: 13, color: "var(--hl-fg-3)" }}>Pick a sheet to continue</span>

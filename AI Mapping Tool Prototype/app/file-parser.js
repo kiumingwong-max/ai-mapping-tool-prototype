@@ -18,7 +18,10 @@
     const text = await file.text();
     const { headers, rows, rawGrid } = window.csvToGrid(text);
     const totalRows = (rawGrid?.length || 0);
-    const totalCols = Math.max(headers.length, ...rows.map(r => Object.keys(r).length));
+    // Every dict-row is built with exactly headers.length keys, so column count
+    // is headers.length. (Avoids spreading the whole rows array into Math.max,
+    // which overflows the call stack on very large files.)
+    const totalCols = headers.length;
     const preview = (rawGrid || []).slice(0, PREVIEW_ROWS).map(r =>
       r.slice(0, PREVIEW_COLS).map(v => String(v ?? "").slice(0, 80))
     );
@@ -86,6 +89,10 @@
       }
       rows.push(obj);
     }
+    // Strip leading annotation / divider rows that sit between the header and the
+    // real data: Faire's "Mandatory / Optional" requirement row, JOOR/Le New Black
+    // "------- Examples -------" dividers, etc. Only strips from the top.
+    while (rows.length && looksLikeAnnotationRow(rows[0])) rows.shift();
     return {
       filename: parsedFile.filename,
       sheetName,
@@ -93,6 +100,23 @@
       headers,
       rows,
     };
+  }
+
+  // A row is annotation/divider noise if most of its non-empty cells are
+  // requirement markers ("Mandatory", "Optional, defaults to…"), example
+  // dividers, dash rules, or machine-key identifiers — not real product data.
+  function looksLikeAnnotationRow(obj) {
+    const vals = Object.values(obj).map(v => String(v).trim()).filter(Boolean);
+    if (!vals.length) return false;
+    // Machine-key row (Faire): product_name_english, info_status_v2, …
+    if (window.Transforms && window.Transforms.looksLikeMachineKeyRow(vals)) return true;
+    const noise = vals.filter(v =>
+      /^(mandatory|optional|required|conditional|do not edit)\b/i.test(v) ||
+      /-{3,}\s*examples?/i.test(v) || /examples?\s*-{3,}/i.test(v) ||
+      /^-{3,}$/.test(v) ||
+      /^example[s]?\b/i.test(v)
+    ).length;
+    return noise / vals.length >= 0.5;
   }
 
   // CSV → grid + dict-rows. Replaces the older parseCSV which only returned headers/rows.

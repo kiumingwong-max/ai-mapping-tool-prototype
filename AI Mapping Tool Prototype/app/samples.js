@@ -70,7 +70,7 @@ window.TARGET_SCHEMA_GROUPS = [
     icon: "tag",
     fields: [
       { id: "product_name",        label: "Product name",         required: true,  hint: "Shopify: Title" },
-      { id: "brand_name",          label: "Brand name",           required: true,  hint: "Shopify: Vendor" },
+      { id: "brand_name",          label: "Brand name",           hint: "Shopify: Vendor (from account)" },
       { id: "handle",              label: "Handle / slug",        hint: "URL-safe identifier" },
       { id: "product_description", label: "Description",          hint: "Body (HTML)" },
       { id: "product_type",        label: "Product type",         hint: "Shopify: Type" },
@@ -83,7 +83,7 @@ window.TARGET_SCHEMA_GROUPS = [
     icon: "barcode",
     fields: [
       { id: "sku",            label: "SKU",                   hint: "Variant SKU" },
-      { id: "style_number",   label: "Style number",          hint: "Brand internal code" },
+      { id: "style_number",   label: "Style number",          required: true, hint: "Product key — style_number + season + color" },
       { id: "barcode",        label: "Barcode (UPC / EAN)",   hint: "Variant Barcode" },
       { id: "mpn",            label: "MPN",                   hint: "Manufacturer part number" },
       { id: "gtin",           label: "GTIN" },
@@ -108,9 +108,9 @@ window.TARGET_SCHEMA_GROUPS = [
     icon: "palette",
     fields: [
       // Shopify standard variant attributes
-      { id: "color",          label: "Color",            hint: "Shopify attribute: color" },
+      { id: "color",          label: "Color",            required: true, suggestedDefault: "Assorted", hint: "Product key part · Shopify attribute: color" },
       { id: "color_pattern",  label: "Color pattern",    hint: "Solid · striped · printed" },
-      { id: "size",           label: "Size",             hint: "Shopify attribute: size" },
+      { id: "size",           label: "Size (size_1)",    required: true, suggestedDefault: "OS", hint: "Maps to size_1 · size-indexed pricing" },
       { id: "size_system",    label: "Size system",      hint: "US · EU · UK · alpha" },
       { id: "material",       label: "Material",         hint: "Shopify attribute: material" },
       { id: "pattern",        label: "Pattern",          hint: "Shopify attribute: pattern" },
@@ -123,10 +123,10 @@ window.TARGET_SCHEMA_GROUPS = [
     label: "Categorization",
     icon: "folder-tree",
     fields: [
-      { id: "product_category",   label: "Product category",     hint: "Shopify taxonomy: Apparel > Tops > T-shirts" },
+      { id: "product_category",   label: "Product category",     required: true, suggestedDefault: "Uncategorized", hint: "Shopify taxonomy: Apparel > Tops > T-shirts" },
       { id: "subcategory",        label: "Subcategory" },
       { id: "collection",         label: "Collection",           hint: "FW25 Women · SS26" },
-      { id: "season",             label: "Season",               hint: "SS · FW · cruise" },
+      { id: "season",             label: "Season",               required: true, suggestedDefault: "General", hint: "Product key part · SS26 · FW25" },
       { id: "line",               label: "Line",                 hint: "Womens · Mens · Kids" },
       { id: "tags",               label: "Tags" },
     ]
@@ -216,3 +216,8 @@ window.TARGET_SCHEMA = window.TARGET_SCHEMA_GROUPS.flatMap(g => g.fields.map(f =
 // account context (no column mapping required). The user can still override
 // by explicitly mapping a column.
 window.ACCOUNT_PROVIDES = ["brand_name"];
+
+// Required fields that can be satisfied by an equivalent mapped field. NuO keys
+// products by style_number, but Shopify uses Variant SKU / Handle as that key —
+// so a mapped sku/handle satisfies the style_number requirement.
+window.FIELD_EQUIVALENTS = { style_number: ["sku", "handle"] };

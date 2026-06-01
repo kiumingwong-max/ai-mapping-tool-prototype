@@ -8,6 +8,8 @@ function App() {
   const [mappings, setMappings] = useStateApp(null);
   const [result, setResult] = useStateApp(null);
   const [scenario, setScenario] = useStateApp("clean");
+  const [constants, setConstants] = useStateApp({});       // #5 required-field defaults
+  const [customerFile, setCustomerFile] = useStateApp(null); // #4 customer-data branch
 
   const [tweaks, setTweak] = useTweaks(/*EDITMODE-BEGIN*/{
     "showStepper": true,
@@ -27,39 +29,51 @@ function App() {
   }, [tweaks.accent]);
 
   const handleParsed = (parsed) => {
+    // #4 — route pure customer-data files to a dedicated branch instead of the
+    // product mapping flow.
+    if (parsed && parsed.purpose === "customer_data") {
+      setCustomerFile(parsed);
+      return;
+    }
+    setCustomerFile(null);
     setFile(parsed);
     setStep(2);
   };
 
-  const handleConfirmMapping = (m) => {
+  const handleConfirmMapping = (m, consts) => {
     setMappings(m);
-    const r = window.validateImport(file, m);
+    const cs = consts || {};
+    setConstants(cs);
+    const r = window.validateImport(file, m, cs);
     setResult(r);
     setStep(r.success ? 4 : 3);
   };
 
   const reset = () => {
-    setFile(null); setMappings(null); setResult(null);
+    setFile(null); setMappings(null); setResult(null); setConstants({}); setCustomerFile(null);
     setStep(1);
+  };
+
+  // Proceed as products anyway from the customer-data interstitial
+  const importCustomerAsProducts = () => {
+    const f = customerFile; setCustomerFile(null); setFile(f); setStep(2);
   };
 
   return (
     <>
       <TopChrome/>
 
-      {/* Page header */}
-      <div style={{ background: "#fff", padding: "24px 32px 0", borderBottom: "0" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div>
-            <div style={{ fontSize: 12, color: "var(--hl-fg-3)", fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 6 }}>
+      {/* Page header — compact title bar. The upload step has its own intro copy,
+          and steps 2-4 are dense working views, so we don't repeat a long blurb here. */}
+      <div style={{ background: "#fff", padding: "14px 32px" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12, color: "var(--hl-fg-3)", fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 2 }}>
               Brand Admin · Data
             </div>
-            <h1 style={{ margin: 0, fontFamily: "Lato", fontWeight: 900, fontSize: 32, color: "var(--hl-icon)", letterSpacing: "-0.015em" }}>
+            <h1 style={{ margin: 0, fontFamily: "Lato", fontWeight: 900, fontSize: 22, color: "var(--hl-icon)", letterSpacing: "-0.015em" }}>
               Import products
             </h1>
-            <p style={{ marginTop: 6, marginBottom: 16, color: "var(--hl-fg-2)", fontSize: 14, maxWidth: 720 }}>
-              Upload your brand's product catalog in any CSV or XLSX format. We'll auto-map your columns to NuORDER's schema, validate every row, and load the catalog in one go.
-            </p>
           </div>
           {step > 1 && file && (
             <Button variant="text" icon="redo" onClick={reset}>Start over</Button>
@@ -73,15 +87,21 @@ function App() {
         flex: 1, minHeight: 0, overflow: "auto", background: "var(--hl-bg)",
         display: "flex", flexDirection: "column",
       }}>
-        {step === 1 && <UploadStep onParsed={handleParsed} scenario={scenario} setScenario={setScenario}/>}
-        {step === 2 && file && <MappingStep file={file} onConfirm={handleConfirmMapping} onBack={reset}/>}
-        {step === 3 && file && result && (
-          <ValidationStep file={file} mappings={mappings} result={result}
-            onReupload={reset}
-            onBack={() => setStep(2)}/>
-        )}
-        {step === 4 && file && result && (
-          <SuccessStep file={file} mappings={mappings} result={result} onStartOver={reset}/>
+        {customerFile ? (
+          <CustomerBranch file={customerFile} onReupload={reset} onProceed={importCustomerAsProducts}/>
+        ) : (
+          <>
+            {step === 1 && <UploadStep onParsed={handleParsed} scenario={scenario} setScenario={setScenario}/>}
+            {step === 2 && file && <MappingStep file={file} onConfirm={handleConfirmMapping} onBack={reset}/>}
+            {step === 3 && file && result && (
+              <ValidationStep file={file} mappings={mappings} result={result} constants={constants}
+                onReupload={reset}
+                onBack={() => setStep(2)}/>
+            )}
+            {step === 4 && file && result && (
+              <SuccessStep file={file} mappings={mappings} result={result} constants={constants} onStartOver={reset}/>
+            )}
+          </>
         )}
       </main>
 

@@ -17,12 +17,17 @@ Each file may be a vendor template (e.g. JOOR, Le New Black, NuORDER), a Shopify
 
 Spreadsheets often contain:
 - "Instructions" sheets — prose telling the user how to use the template
-- "Field Descriptions" sheets — column reference (Name/Description/Type/Required columns)
-- "Template" sheets — the actual data the user will fill in
-- Reference lookup sheets (Countries, Currency Codes, Style Categories)
+- "Field Descriptions" / "Column Definitions" sheets — column reference (Name/Description/Type/Required columns)
+- "Template" / "Products" sheets — the actual data the user will fill in (Faire uses "Products"; Le New Black uses "Template (basic)" / "Template (full)" — prefer the fuller one)
+- Reference lookup sheets (Countries, Currency Codes, Style Categories, Faire "Data Options")
 - Real data exports with the column headers on row 0
 
-Header rows can hide BELOW annotation rows. For example, a Shopify export may have rows 0–1 containing AI suggestions or notes about NuOrder field mappings, with the real Shopify column headers (Handle, Title, Vendor, Product Category…) on row 2. Look for the row whose cells are short, distinct, capitalized phrases that look like field names AND where the rows beneath are recognizably data (URLs, prices, HTML fragments, SKU codes).
+Header rows can hide BELOW annotation rows, and there can be MORE THAN ONE annotation row:
+- A Shopify export may have rows 0–1 with AI/NuOrder mapping notes, real headers (Handle, Title, Vendor…) on row 2.
+- Faire's "Products" sheet puts real headers on row 0, then a "Mandatory / Optional" requirement row, then (sometimes) a machine-key row, before data. The "Mandatory/Optional" row is NOT data — skip it.
+- A brand may paste a human note on row 0 ("Hi! The orange columns are required…") and the headers on row 1.
+- Le New Black templates put a "------- Examples -------" divider between the header and the first real row — skip it.
+Pick the row whose cells are short, distinct field-name-like phrases AND where the rows beneath are recognizably data (URLs, prices, HTML, SKU/style codes). first_data_row should skip requirement rows, machine-key rows and "Examples" dividers.
 
 Classify each sheet with one of these kinds:
 - "data" — the importable product table
@@ -193,10 +198,12 @@ function heuristicSheet(sheet) {
   if (/instruction|read.?me|how.?to/.test(name)) {
     return { name: sheet.name, kind: "instructions", header_row: null, first_data_row: null, reason: "Sheet name suggests instructions." };
   }
-  if (/field.?descript|field.?ref|column.?ref/.test(name)) {
+  if (/field.?descript|field.?ref|column.?(ref|def)|definitions?/.test(name)) {
     return { name: sheet.name, kind: "field_descriptions", header_row: null, first_data_row: null, reason: "Sheet name suggests field reference." };
   }
-  if (/countries|currency|categor|reference|lookup/.test(name) && sheet.totalCols <= 5) {
+  // Reference/lookup tabs: Countries, Currency Codes, Style Categories, Faire "Data Options"
+  if ((/countries|currency|categor|reference|lookup|data options|value list|options? list/.test(name) && sheet.totalCols <= 6)
+      || /data options/.test(name)) {
     return { name: sheet.name, kind: "reference_lookup", header_row: null, first_data_row: null, reason: "Looks like a value lookup table." };
   }
   // Inspect data
@@ -221,10 +228,28 @@ function heuristicSheet(sheet) {
 function heuristicFile(file) {
   const lower = file.filename.toLowerCase();
   const sheets = file.sheets.map(heuristicSheet);
+
+  // Inspect the richest data sheet's header row for customer-vs-product signals
+  const dataSheets = sheets.filter(s => s.kind === "data");
+  const richest = dataSheets.slice().sort((a, b) => {
+    const ca = (file.sheets.find(x => x.name === a.name) || {}).totalCols || 0;
+    const cb = (file.sheets.find(x => x.name === b.name) || {}).totalCols || 0;
+    return cb - ca;
+  })[0];
+  let headerText = "";
+  if (richest) {
+    const sh = file.sheets.find(x => x.name === richest.name);
+    headerText = (((sh && sh.preview[richest.header_row || 0]) || []).join(" | ")).toLowerCase();
+  }
+  const CUSTOMER_SIGNALS = ["customer name", "customer code", "buyer", "email", "address", "payment method", "shipping method", "sales rep", "store name", "zip", "retailer", "billing"];
+  const customerHits = CUSTOMER_SIGNALS.filter(s => headerText.includes(s)).length;
+  const PRODUCT_SIGNALS = ["sku", "style", "wholesale", "variant", "color", "size", "product", "barcode"];
+  const productHits = PRODUCT_SIGNALS.filter(s => headerText.includes(s)).length;
+
   let purpose = "unclear", label = "Unclassified", recommendation = "skip";
   if (/pricesheet|price.?list|pricing/.test(lower)) {
     purpose = "pricing"; label = "Pricing data"; recommendation = "supplementary";
-  } else if (/company|customer|retailer|account/.test(lower)) {
+  } else if (/company|customer|retailer|account/.test(lower) || (customerHits >= 3 && customerHits > productHits)) {
     purpose = "customer_data"; label = "Customer data"; recommendation = "supplementary";
   } else if (sheets.some(s => s.kind === "data")) {
     purpose = "product_catalog"; label = "Product catalog"; recommendation = "primary";

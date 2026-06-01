@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Import products · NuORDER</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="app/helios.css">
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: var(--hl-bg); }
+    #root { height: 100vh; display: flex; flex-direction: column; min-height: 0; }
+    button:focus:not(:focus-visible) { outline: none; }
+    button:focus-visible { outline: 2px solid var(--hl-go-blue); outline-offset: 2px; }
+    select:focus-visible { outline: 2px solid var(--hl-go-blue); outline-offset: 2px; }
+    @keyframes hl-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+    @keyframes hl-pop { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
+  </style>
+
+  <!-- Production React (no in-browser Babel transformer) -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- SheetJS for XLSX parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- Engine modules (plain JS, no transpile needed) -->
+  <script src="app/samples.js"></script>
+  <script src="app/file-parser.js"></script>
+  <script src="app/row-normalizer.js"></script>
+  <script src="app/transforms.js"></script>
+  <script src="app/saved-mappings.js"></script>
+  <script src="app/ai-triage.js"></script>
+  <script src="app/ai-mapping.js"></script>
+  <script src="app/validate.js"></script>
+
+  <!-- Precompiled UI components (transpiled from app/*.jsx → build/*.js) -->
+  <script src="build/Primitives.js"></script>
+  <script src="build/tweaks-panel.js"></script>
+  <script src="build/TopChrome.js"></script>
+  <script src="build/Stepper.js"></script>
+  <script src="build/CustomerBranch.js"></script>
+  <script src="build/UploadStep.js"></script>
+  <script src="build/MappingStep.js"></script>
+  <script src="build/ValidationStep.js"></script>
+  <script src="build/SuccessStep.js"></script>
+  <script src="build/App.js"></script>
+</body>
+</html>
