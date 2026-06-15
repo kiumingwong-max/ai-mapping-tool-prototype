@@ -161,7 +161,6 @@ The pure logic lives in plain-JS modules (`ai-mapping.js`, `validate.js`, `trans
 // (see the precompile step; production.html loads the build/ output)
 ```
 
-
 ---
 
 ## Configuration points
@@ -176,3 +175,10 @@ The pure logic lives in plain-JS modules (`ai-mapping.js`, `validate.js`, `trans
 ## Status
 
 Prototype / design exploration aligned with the NU-82132 RFC. The "backend" (triage, mapping, validation) runs client-side for demonstration; a production implementation would move file analysis, LLM calls, and the validate/commit pipeline server-side (the RFC proposes reusing VETL with an AnalyzeFileTool profiling pass and a NullSink two-pass dry-run). Deferred per discussion: an explicit user-facing dry-run/commit split and the literal `size_{N}/price_{N}_{currency}` schema naming.
+
+---
+
+## Bundle contents
+
+- `ai-mapping-tool/README.md` — this file
+- `ai-mapping-tool/project/` — the `AI Mapping Tool` project files (HTML prototypes, assets, components)
